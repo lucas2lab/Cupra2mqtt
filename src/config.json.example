@@ -1,0 +1,12 @@
+{
+    "cupra_vin"      : "VSSZZZXXXXXXXXXXXX",
+    "cupra_username" : "xxxxxxxx@xxxxxxxxxxxx.xxx",
+    "cupra_password" : "xxxxxxxxx",
+    "cupra_refresh"  : 300,
+
+    "mqtt_broker_ip"    : "1.11.1.1",
+    "mqtt_broker_port"  : 1883,
+    "mqtt_broker_user"  : "xxxxxxxxxxxxx",
+    "mqtt_broker_pass"  : "xxxxxxxxxxxxx",
+    "mqtt_broker_topic" : "cupra"
+}
