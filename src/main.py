@@ -4,34 +4,58 @@ import signal
 import sys
 from datetime import datetime
 
+import logging
+from sys import stdout
+
 import paho.mqtt.client as mqtt
 
 from weconnect_cupra import weconnect_cupra
 from weconnect_cupra.service import Service
 from weconnect_cupra.elements.control_operation import ControlOperation
 
-with open("src/config.json") as f:
-    cfg = json.load(f)
+def setup_logging():
+    log = logging.getLogger('logger')
+    log.setLevel(logging.DEBUG) # set logger level
+    logFormatter = logging.Formatter("%(name)-12s %(asctime)s %(levelname)-8s %(filename)s:%(funcName)s %(message)s")
+    consoleHandler = logging.StreamHandler(stdout) #set streamhandler to stdout
+    consoleHandler.setFormatter(logFormatter)
+    log.addHandler(consoleHandler)
+    return log
+
+log = setup_logging()
+
+def load_config():
+    try:
+        with open("src/config.json") as f:
+            cfg = json.load(f)
+            log.info("Config loaded")
+    except Exception as e:
+        log.error("Failed to load config: %s", e)
+        sys.exit(1)
+
+    return cfg
+
+cfg = load_config()
 
 def signal_handler(sig, frame):
-    print('Closing service...')
+    log.info("Received signal {}. Exiting...".format(sig))
     mqttc.disconnect()
     mqttc.loop_stop()
     sys.exit(0)
 
 def on_connect(client, userdata, flags, reason_code, properties):
-    print(f"Connected with result code {reason_code}")
+    log.info(f"Connected with result code {reason_code}")
     client.subscribe("{}/#".format(cfg["mqtt_broker_topic"]))
     #client.subscribe("$SYS/#")
 
 def on_message(client, userdata, msg):
-    print(msg.topic+" "+str(msg.payload))
+    log.info(msg.topic+" "+str(msg.payload))
     if msg.topic == "{}/clima/set".format(cfg["mqtt_broker_topic"]):
         try:   
             state = json.loads(msg.payload.decode())["state"]
-            print(f"Setting clima to {state}")
+            log.info(f"Setting clima to {state}")
         except json.JSONDecodeError:
-            print("Error decoding JSON {}".format(msg.payload.decode()))
+            log.error("Error decoding JSON {}".format(msg.payload.decode()))
             return
         if state == "on":
             weConnect.vehicles[cfg['cupra_vin']].controls.climatizationControl.value = ControlOperation(value='start')
@@ -40,10 +64,10 @@ def on_message(client, userdata, msg):
 
 def on_publish(client, userdata, mid, reason_code, properties):
     try:
-        print(f"mid: {mid} reason_code: {reason_code}")
+        log.debug(f"mid: {mid} reason_code: {reason_code}")
         userdata.remove(mid)
     except KeyError:
-        print("on_publish() is called with a mid not present in unacked_publish")
+        log.error("on_publish() is called with a mid not present in unacked_publish")
 
 # signal handling
 signal.signal(signal.SIGINT, signal_handler)
@@ -76,9 +100,8 @@ while True:
     _car = json.loads(weConnect.vehicles[cfg['cupra_vin']].toJSON())
 
     _last_update = datetime.strptime(_car['domains']['charging']['chargingStatus']['carCapturedTimestamp'], '%Y-%m-%dT%H:%M:%S+00:00')
-    print(last_update, _last_update)
     if last_update >= _last_update:
-        print("No new data to send to MQTT. Skipping...")
+        log.info("No new data to send to MQTT. Skipping (Internal {}, Api returned {})...".format(last_update, _last_update))
     else:
         last_update = _last_update
         car = {'connectivity':{}, 'charging':{}, 'battery':{}, 'clima':{}}
@@ -91,7 +114,7 @@ while True:
         car['battery']['percentage']       = _car['domains']['charging']['batteryStatus']['currentSOC_pct']
         car['clima']['state']              = _car['domains']['climatisation']['climatisationStatus']['climatisationState'] # ventilation / off
 
-        print("Sending car data to MQTT: ", car)
+        log.info("Sending car data to MQTT: ", car)
         msg_info = mqttc.publish(cfg["mqtt_broker_topic"], json.dumps(car), qos=1)
         unacked_publish.add(msg_info.mid)
 
