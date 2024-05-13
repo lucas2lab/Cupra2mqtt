@@ -32,7 +32,6 @@ def load_config():
     except Exception as e:
         log.error("Failed to load config: %s", e)
         sys.exit(1)
-
     return cfg
 
 cfg = load_config()
@@ -95,7 +94,12 @@ mqttc.connect(cfg["mqtt_broker_ip"], cfg["mqtt_broker_port"], 60)
 mqttc.loop_start()
 
 while True:
-    weConnect.update()
+    try:
+        weConnect.update()
+    except Exception as e:
+        log.error(f"Failed to update weConnect: {e}")
+        time.sleep(cfg["cupra_refresh"])
+        continue
 
     _car = json.loads(weConnect.vehicles[cfg['cupra_vin']].toJSON())
 
