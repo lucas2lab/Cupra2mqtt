@@ -68,6 +68,16 @@ def on_publish(client, userdata, mid, reason_code, properties):
     except KeyError:
         log.error("on_publish() is called with a mid not present in unacked_publish")
 
+def publish_message(mqttc, unacked_publish, topic, payload, qos=0, retain=False):
+    (rc, mid) = mqttc.publish(topic, payload, qos, retain)
+    if rc != mqtt.MQTT_ERR_SUCCESS:
+        log.error(f"Error publishing message to {topic}: {mqtt.error_string(rc)}")
+    else:
+        unacked_publish.add(mid)
+        while len(unacked_publish):
+            time.sleep(0.1)
+        log.info(f"Message published to {topic}")
+
 # signal handling
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
@@ -106,6 +116,8 @@ while True:
     _last_update = datetime.strptime(_car['domains']['charging']['chargingStatus']['carCapturedTimestamp'], '%Y-%m-%dT%H:%M:%S+00:00')
     if last_update >= _last_update:
         log.info("No new data to send to MQTT. Skipping (Internal {}, Api returned {})...".format(last_update, _last_update))
+        publish_message(mqttc, unacked_publish, cfg["mqtt_broker_topic"], json.dumps({'keepalive':1}))
+
     else:
         last_update = _last_update
         car = {'connectivity':{}, 'charging':{}, 'battery':{}, 'clima':{}}
@@ -119,13 +131,7 @@ while True:
         car['clima']['state']              = _car['domains']['climatisation']['climatisationStatus']['climatisationState'] # ventilation / off
 
         log.info("Sending car data to MQTT: ", car)
-        msg_info = mqttc.publish(cfg["mqtt_broker_topic"], json.dumps(car), qos=1)
-        unacked_publish.add(msg_info.mid)
-
-        while len(unacked_publish):
-            time.sleep(0.1)
-
-        msg_info.wait_for_publish()
+        publish_message(mqttc, unacked_publish, cfg["mqtt_broker_topic"], json.dumps(car))
 
     time.sleep(cfg["cupra_refresh"])
 
